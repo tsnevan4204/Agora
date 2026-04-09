@@ -1,0 +1,85 @@
+# Dependencies
+node_modules/
+
+# Yarn Berry (keep tracked: patches, plugins, releases, sdks, versions)
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# Environment & secrets (never commit real keys — use root env.example)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+packages/*/.env
+packages/*/.env.local
+packages/*/.env.development.local
+packages/*/.env.test.local
+packages/*/.env.production.local
+*.pem
+*.key
+
+agora-492710-29f57de20c1c.json
+
+# Hardhat / Solidity
+packages/hardhat/cache/
+packages/hardhat/artifacts/
+packages/hardhat/typechain-types/
+packages/hardhat/typechain/
+packages/hardhat/coverage/
+packages/hardhat/coverage.json
+packages/hardhat/artifacts-zk/
+packages/hardhat/cache-zk/
+packages/hardhat/deployments/localhost
+packages/hardhat/deployments/hardhat
+packages/hardhat/temp/
+packages/hardhat/.openzeppelin/
+# Local testnet burner keys (never commit)
+packages/hardhat/burner-wallets.json
+
+# Next.js
+packages/nextjs/.next/
+packages/nextjs/out/
+packages/nextjs/build/
+packages/nextjs/.vercel
+packages/nextjs/ipfs-upload.config.json
+
+# Tooling & caches
+dist/
+.eslintcache
+*.tsbuildinfo
+.turbo/
+
+# Logs & debug
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Test / coverage (root or package)
+coverage/
+.nyc_output/
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE & editors (local settings; remove a line if your team commits shared configs)
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Optional local challenge progress (uncomment if you do not want it in git)
+# .challenge-ai/

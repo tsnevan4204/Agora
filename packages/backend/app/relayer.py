@@ -1,0 +1,144 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from web3 import Web3
+from web3.types import TxParams
+
+from .config import settings
+from .models import RelayForwardRequest
+
+FORWARDER_ABI = [
+    {
+        "inputs": [
+            {
+                "components": [
+                    {"internalType": "address", "name": "from", "type": "address"},
+                    {"internalType": "address", "name": "to", "type": "address"},
+                    {"internalType": "uint256", "name": "value", "type": "uint256"},
+                    {"internalType": "uint256", "name": "gas", "type": "uint256"},
+                    {"internalType": "uint48", "name": "deadline", "type": "uint48"},
+                    {"internalType": "bytes", "name": "data", "type": "bytes"},
+                    {"internalType": "bytes", "name": "signature", "type": "bytes"},
+                ],
+                "internalType": "struct ERC2771Forwarder.ForwardRequestData",
+                "name": "request",
+                "type": "tuple",
+            }
+        ],
+        "name": "verify",
+        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {"internalType": "address", "name": "from", "type": "address"},
+                    {"internalType": "address", "name": "to", "type": "address"},
+                    {"internalType": "uint256", "name": "value", "type": "uint256"},
+                    {"internalType": "uint256", "name": "gas", "type": "uint256"},
+                    {"internalType": "uint48", "name": "deadline", "type": "uint48"},
+                    {"internalType": "bytes", "name": "data", "type": "bytes"},
+                    {"internalType": "bytes", "name": "signature", "type": "bytes"},
+                ],
+                "internalType": "struct ERC2771Forwarder.ForwardRequestData",
+                "name": "request",
+                "type": "tuple",
+            }
+        ],
+        "name": "execute",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function",
+    },
+]
+
+ALLOWED_SELECTORS = {
+    "0x6114f3f4",  # split(uint256,uint256)
+    "0xf6f8d0b2",  # merge(uint256,uint256)
+    "0x24598f06",  # redeem(uint256)
+    "0x70265f74",  # postOffer(uint256,uint8,uint256,uint256)
+    "0x9a100a9b",  # fillOffer(uint256,uint256)
+    "0x52e9ca89",  # cancelOffer(uint256)
+}
+
+
+@dataclass
+class RelayResult:
+    ok: bool
+    tx_hash: str | None = None
+    reason: str | None = None
+
+
+def _selector(calldata_hex: str) -> str:
+    if not calldata_hex.startswith("0x") or len(calldata_hex) < 10:
+        return ""
+    return calldata_hex[:10].lower()
+
+
+def _is_allowed_target(addr: str) -> bool:
+    allowed = {settings.manager_address.lower(), settings.exchange_address.lower()}
+    return addr.lower() in allowed
+
+
+def _normalize_pk(pk: str) -> str:
+    s = pk.strip()
+    return s if s.startswith("0x") else f"0x{s}"
+
+
+def relay_forward_request(request: RelayForwardRequest) -> RelayResult:
+    if not settings.rpc_url or not settings.relayer_private_key or not settings.forwarder_address:
+        return RelayResult(ok=False, reason="Missing RPC_URL/RELAYER_PRIVATE_KEY/FORWARDER_ADDRESS")
+    if not _is_allowed_target(request.to):
+        return RelayResult(ok=False, reason="Target contract not allowlisted")
+    if _selector(request.data) not in ALLOWED_SELECTORS:
+        return RelayResult(ok=False, reason="Function selector not allowlisted")
+
+    w3 = Web3(Web3.HTTPProvider(settings.rpc_url))
+    acct = w3.eth.account.from_key(_normalize_pk(settings.relayer_private_key))
+    forwarder = w3.eth.contract(address=Web3.to_checksum_address(settings.forwarder_address), abi=FORWARDER_ABI)
+
+    req_tuple = (
+        Web3.to_checksum_address(request.from_address),
+        Web3.to_checksum_address(request.to),
+        int(request.value),
+        int(request.gas),
+        int(request.deadline),
+        request.data,
+        request.signature,
+    )
+
+    try:
+        is_valid = forwarder.functions.verify(req_tuple).call()
+        if not is_valid:
+            return RelayResult(ok=False, reason="Forward request verification failed")
+
+        nonce = w3.eth.get_transaction_count(acct.address)
+        tx: TxParams = forwarder.functions.execute(req_tuple).build_transaction(
+            {
+                "from": acct.address,
+                "nonce": nonce,
+                "value": int(request.value),
+                "chainId": w3.eth.chain_id,
+            }
+        )
+        gas_estimate = w3.eth.estimate_gas(tx)
+        tx["gas"] = int(gas_estimate * 12 // 10)
+
+        signed = acct.sign_transaction(tx)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+        if receipt.status != 1:
+            return RelayResult(ok=False, reason="Relay tx reverted on-chain", tx_hash=tx_hash.hex())
+        return RelayResult(ok=True, tx_hash=tx_hash.hex())
+    except Exception as exc:
+        err = str(exc).lower()
+        reason = "Relay transaction failed"
+        if "insufficient funds" in err:
+            reason = "Relayer wallet insufficient funds for gas"
+        elif "nonce too low" in err or "replacement transaction" in err:
+            reason = "Nonce conflict; wait for pending transaction"
+        elif "could not connect" in err or "timeout" in err or "timed out" in err:
+            reason = "RPC connection error"
+        return RelayResult(ok=False, reason=reason)
