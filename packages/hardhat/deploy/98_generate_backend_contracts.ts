@@ -1,7 +1,7 @@
 /**
  * This file is part of the hardhat deploy pipeline.
  * It reads compiled deployment artifacts and writes a Python-consumable
- * contract manifest to packages/backend/app/contracts/manifest.json.
+ * contract manifest to the backend contracts dir (default: ../backend/app/contracts/manifest.json).
  *
  * The manifest contains ABIs, deployed addresses per network, and
  * pre-computed function selectors for the relayer allowlist.
@@ -13,9 +13,10 @@ import { DeployFunction } from "hardhat-deploy/types";
 import { Interface } from "ethers";
 import * as fs from "fs";
 import * as path from "path";
+import type { HardhatRuntimeEnvironment } from "hardhat/types";
+import { agoraBackendContractsDir } from "./paths";
 
 const DEPLOYMENTS_DIR = "./deployments";
-const BACKEND_CONTRACTS_DIR = "../backend/app/contracts";
 
 const RELAYER_ALLOWED_FUNCTIONS: Record<string, string[]> = {
   PredictionMarketManager: ["split", "merge", "redeem"],
@@ -73,7 +74,8 @@ function computeSelectors(contractName: string, abi: any[], allowedFunctions: st
   return entries;
 }
 
-const syncBackendContracts: DeployFunction = async function () {
+const syncBackendContracts: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
+  const backendContractsDir = agoraBackendContractsDir(hre);
   const networks: Record<string, NetworkEntry> = {};
   const allAbis: Record<string, any[]> = {};
 
@@ -110,11 +112,11 @@ const syncBackendContracts: DeployFunction = async function () {
     relayerAllowedSelectors: selectors,
   };
 
-  if (!fs.existsSync(BACKEND_CONTRACTS_DIR)) {
-    fs.mkdirSync(BACKEND_CONTRACTS_DIR, { recursive: true });
+  if (!fs.existsSync(backendContractsDir)) {
+    fs.mkdirSync(backendContractsDir, { recursive: true });
   }
 
-  const outPath = path.join(BACKEND_CONTRACTS_DIR, "manifest.json");
+  const outPath = path.join(backendContractsDir, "manifest.json");
   fs.writeFileSync(outPath, JSON.stringify(manifest, null, 2) + "\n");
   console.log(`📝 Updated backend contract manifest at ${outPath}`);
 };

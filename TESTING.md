@@ -43,7 +43,7 @@ yarn workspace @se-2/hardhat deploy --network bscTestnet --tags core,sync-fronte
 
 Expected:
 - Deploy logs for `AgoraForwarder`, `MockUSDT`, `MarketFactory`, `OutcomeToken1155`, `PredictionMarketManager`, `Exchange`
-- `packages/nextjs/contracts/deployedContracts.ts` updated
+- `packages/AgoraFrontEnd/contracts/deployedContracts.ts` updated (Hardhat tag `sync-frontend`)
 
 Then set deployed addresses into `.env`:
 

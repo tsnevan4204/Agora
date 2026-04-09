@@ -1,6 +1,9 @@
 import { DeployFunction } from "hardhat-deploy/types";
 import * as fs from "fs";
+import path from "path";
 import prettier from "prettier";
+import type { HardhatRuntimeEnvironment } from "hardhat/types";
+import { agoraFrontendContractsDir } from "./paths";
 
 const GENERATED_COMMENT = `
 /**
@@ -54,23 +57,24 @@ function collectContractsByChain() {
   return output;
 }
 
-const syncFrontendContracts: DeployFunction = async function () {
-  const targetDir = "../nextjs/contracts/";
+const syncFrontendContracts: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
+  const targetDir = agoraFrontendContractsDir(hre);
   const allContracts = collectContractsByChain();
   const fileContent = Object.entries(allContracts).reduce((content, [chainId, chainConfig]) => {
     return `${content}${parseInt(chainId).toFixed(0)}:${JSON.stringify(chainConfig, null, 2)},`;
   }, "");
   if (!fs.existsSync(targetDir)) {
-    fs.mkdirSync(targetDir);
+    fs.mkdirSync(targetDir, { recursive: true });
   }
+  const outFile = path.join(targetDir, "deployedContracts.ts");
   fs.writeFileSync(
-    `${targetDir}deployedContracts.ts`,
+    outFile,
     await prettier.format(
-      `${GENERATED_COMMENT} import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";\n\nconst deployedContracts = {${fileContent}} as const;\n\nexport default deployedContracts satisfies GenericContractsDeclaration;`,
+      `${GENERATED_COMMENT}\nexport const deployedContracts = {${fileContent}} as const;\n\nexport type DeployedContractsMap = typeof deployedContracts;\n`,
       { parser: "typescript" },
     ),
   );
-  console.log(`📝 Updated TypeScript contract definition file on ${targetDir}deployedContracts.ts`);
+  console.log(`📝 Updated TypeScript contract definition file at ${outFile}`);
 };
 
 export default syncFrontendContracts;

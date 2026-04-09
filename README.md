@@ -10,7 +10,7 @@ USDT-collateralized prediction markets on BNB Smart Chain with:
 ## Monorepo Structure
 
 - `packages/hardhat`: contracts, deploy scripts, tests
-- `packages/nextjs`: frontend
+- `packages/AgoraFrontEnd`: Next.js marketing + trading UI (ABIs from `yarn agora:sync-abi`)
 - `packages/backend`: Python backend (proposals, resolution worker, event archiving)
 
 ## Quick Start
@@ -22,7 +22,7 @@ USDT-collateralized prediction markets on BNB Smart Chain with:
 3. Deploy contracts:
    - `yarn deploy`
 4. Start frontend:
-   - `yarn start`
+   - `yarn agora:dev` (or `cd packages/AgoraFrontEnd && pnpm dev`)
 5. Run deterministic tests (Hardhat unit suite + backend pytest):
    - `yarn test`
    - Live testnet scripts: `yarn hardhat:test:testnet` (see [TESTING.md](TESTING.md))

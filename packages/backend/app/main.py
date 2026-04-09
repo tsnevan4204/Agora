@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from .chain import create_event_and_markets, submit_resolves
 from .config import settings
@@ -18,14 +19,22 @@ from .models import (
 from .orderbook import OffchainOrder, list_orders, upsert_order
 from .relayer import relay_forward_request
 from .resolution import evidence_hash
-from .storage import store
+from .storage import store, store_backend_kind
 
 app = FastAPI(title="Agora Backend", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(settings.cors_allow_origins),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True}
+    return {"ok": True, "storage": store_backend_kind()}
 
 
 @app.post("/proposals")

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+from pathlib import Path
 from typing import Any, Protocol
 
 from google.cloud import storage
@@ -53,18 +55,100 @@ class GcsStore:
         blob.upload_from_string(buf.getvalue(), content_type="application/octet-stream")
 
 
+class LocalFilesystemStore:
+    """JSON/text/parquet under AGORA_LOCAL_DATA_DIR — no GCP credentials required."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def _safe_path(self, key: str) -> Path:
+        if ".." in key or key.startswith("/"):
+            raise ValueError(f"Invalid storage path: {key!r}")
+        p = (self.root / key).resolve()
+        try:
+            p.relative_to(self.root.resolve())
+        except ValueError as e:
+            raise ValueError(f"Invalid storage path: {key!r}") from e
+        return p
+
+    def write_json(self, path: str, payload: dict) -> None:
+        fp = self._safe_path(path)
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_text(json.dumps(payload, default=str, indent=2), encoding="utf-8")
+
+    def read_json(self, path: str) -> dict | None:
+        fp = self._safe_path(path)
+        if not fp.is_file():
+            return None
+        return json.loads(fp.read_text(encoding="utf-8"))
+
+    def write_text(self, path: str, data: str, content_type: str = "text/plain") -> None:
+        _ = content_type
+        fp = self._safe_path(path)
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        fp.write_text(data, encoding="utf-8")
+
+    def read_text(self, path: str) -> str | None:
+        fp = self._safe_path(path)
+        if not fp.is_file():
+            return None
+        return fp.read_text(encoding="utf-8")
+
+    def write_parquet(self, path: str, rows: list[dict[str, Any]]) -> None:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        table = pa.Table.from_pylist(rows)
+        fp = self._safe_path(path)
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(table, fp)
+
+
 _override: StorageBackend | None = None
-_gcs_singleton: GcsStore | None = None
+_cached_backend: StorageBackend | None = None
+
+
+def _gcs_credentials_ready() -> bool:
+    cred = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if not cred:
+        return False
+    return Path(cred).expanduser().is_file()
+
+
+def _build_store() -> StorageBackend:
+    mode = settings.storage_backend
+    if mode == "local":
+        return LocalFilesystemStore(settings.local_data_dir)
+    if mode == "gcs":
+        return GcsStore()
+    if mode == "auto":
+        if _gcs_credentials_ready():
+            return GcsStore()
+        return LocalFilesystemStore(settings.local_data_dir)
+    raise ValueError(f"Unknown STORAGE_BACKEND={mode!r} (use auto, gcs, or local)")
 
 
 def get_store() -> StorageBackend:
-    """Return storage backend. Uses GCS lazily on first access unless tests set _override."""
-    global _gcs_singleton
+    """Return storage backend. Tests may set ``_override``."""
+    global _cached_backend
     if _override is not None:
         return _override
-    if _gcs_singleton is None:
-        _gcs_singleton = GcsStore()
-    return _gcs_singleton
+    if _cached_backend is None:
+        _cached_backend = _build_store()
+    return _cached_backend
+
+
+def store_backend_kind() -> str:
+    """Short label for /health (e.g. gcs, local)."""
+    if _override is not None:
+        return "memory"
+    s = get_store()
+    if isinstance(s, GcsStore):
+        return "gcs"
+    if isinstance(s, LocalFilesystemStore):
+        return "local"
+    return type(s).__name__
 
 
 class _StoreDelegate:

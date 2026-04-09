@@ -40,9 +40,11 @@ def memory_store(monkeypatch: pytest.MonkeyPatch) -> InMemoryStore:
 
     mem = InMemoryStore()
     monkeypatch.setattr(storage_mod, "_override", mem)
+    monkeypatch.setattr(storage_mod, "_cached_backend", None)
     print("\n🧪 (fixture memory_store) Swapped storage for an in-memory dict — no real GCS calls in this test.")
     yield mem
     monkeypatch.setattr(storage_mod, "_override", None)
+    monkeypatch.setattr(storage_mod, "_cached_backend", None)
     n = len(mem.items)
     paths = sorted(mem.items.keys())
     print(f"\n✅ (fixture memory_store) Test finished. In-memory store held {n} object(s).")

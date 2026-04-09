@@ -119,7 +119,8 @@ def test_health_returns_ok() -> None:
     print("We call health() exactly like the GET /health route does.")
     out = health()
     print(f"📤 Returned payload: {out!r}")
-    assert out == {"ok": True}
+    assert out.get("ok") is True
+    assert out.get("storage") in ("gcs", "local", "memory")
     print("✅ Status: service reports OK — exactly what we expected.")
 
 
