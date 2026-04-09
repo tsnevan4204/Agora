@@ -38,8 +38,6 @@ packages/hardhat/deployments/localhost
 packages/hardhat/deployments/hardhat
 packages/hardhat/temp/
 packages/hardhat/.openzeppelin/
-# Local testnet burner keys (never commit)
-packages/hardhat/burner-wallets.json
 
 # Next.js
 packages/nextjs/.next/
