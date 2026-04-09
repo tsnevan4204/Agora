@@ -27,11 +27,22 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: yarn
 
-      - name: Install dependencies
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Node dependencies
         run: yarn install --immutable
-      
+
+      - name: Install Python dependencies
+        run: pip install -r packages/backend/requirements.txt
+
       - name: Run hardhat node, deploy contracts (& generate contracts typescript output)
         run: yarn chain & yarn deploy
+
+      - name: Run backend unit tests
+        run: yarn backend:test
 
       - name: Run hardhat lint
         run: yarn hardhat:lint --max-warnings=0

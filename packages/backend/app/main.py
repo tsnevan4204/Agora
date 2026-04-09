@@ -4,32 +4,23 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
-from pydantic import ValidationError
 
 from .chain import create_event_and_markets, submit_resolves
 from .config import settings
 from .models import (
-    AdminResolutionAction,
+    AdminResolveRequest,
     EventProposal,
     ProposalApproveRequest,
     ProposalRejectRequest,
     RelayExecuteResponse,
     RelayForwardRequest,
-    ResolutionSpec,
 )
 from .orderbook import OffchainOrder, list_orders, upsert_order
 from .relayer import relay_forward_request
-from .resolution import build_pending_resolution, compare_value, evidence_hash
-from .scraper import ScrapeError, scrape_yahoo_earnings
+from .resolution import evidence_hash
 from .storage import store
 
 app = FastAPI(title="Agora Backend", version="0.1.0")
-
-METRIC_TO_EXTRACTED_KEY = {
-    "eps": "reportedEPS",
-    "revenue": "revenue",
-    "netIncome": "netIncome",
-}
 
 
 @app.get("/health")
@@ -114,89 +105,25 @@ def get_proposal(proposal_id: str) -> dict:
     return payload
 
 
-@app.post("/resolution/pending/{event_id}")
-def create_pending_resolution(event_id: int, body: dict) -> dict:
+@app.post("/resolution/resolve/{event_id}")
+def resolve_markets(event_id: int, body: AdminResolveRequest) -> dict:
+    """Admin manually resolves markets with specified outcomes."""
     try:
-        specs = [ResolutionSpec.model_validate(item) for item in body.get("specs", [])]
-    except ValidationError as e:
-        raise HTTPException(status_code=400, detail=e.errors()) from e
-
-    market_ids: list[int] = body.get("marketIds", [])
-    ticker: str = body.get("ticker", "")
-    if not ticker or not specs or not market_ids:
-        raise HTTPException(status_code=400, detail="Missing ticker/specs/marketIds")
-    if len(market_ids) != len(specs):
-        raise HTTPException(
-            status_code=400,
-            detail=f"marketIds length ({len(market_ids)}) must match specs length ({len(specs)})",
-        )
-
-    try:
-        scrape = scrape_yahoo_earnings(ticker)
-    except ScrapeError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-
-    outcomes: dict[int, str] = {}
-    for idx, spec in enumerate(specs):
-        market_id = market_ids[idx]
-        metric_key = METRIC_TO_EXTRACTED_KEY[str(spec.metric.value)]
-        actual_raw = scrape["parsed_json"].get(metric_key)
-        if actual_raw is None:
-            raise HTTPException(status_code=409, detail=f"Metric value not available yet: {metric_key}")
-        actual = float(actual_raw)
-        outcomes[market_id] = "YES" if compare_value(spec, actual) else "NO"
-
-    pending = build_pending_resolution(
-        event_id=event_id,
-        market_ids=market_ids,
-        ticker=ticker,
-        extracted_values=scrape["parsed_json"],
-        raw_html_hash=scrape["raw_html_hash"],
-        parsed_json_hash=scrape["parsed_json_hash"],
-        outcomes=outcomes,
-        parser_version=settings.parser_version,
-        expected_earnings_time_utc=specs[0].expectedEarningsTimeUtc,
-    )
-
-    store.write_json(f"resolutions/{event_id}/pending.json", pending.model_dump(mode="json"))
-    store.write_text(f"resolutions/{event_id}/scraped_page.html", scrape["raw_html"], content_type="text/html")
-    store.write_json(f"resolutions/{event_id}/extracted_data.json", scrape["parsed_json"])
-    return {"queued": True, "eventId": event_id, "outcomes": outcomes}
-
-
-@app.post("/resolution/confirm/{event_id}")
-def confirm_resolution(event_id: int, action: AdminResolutionAction) -> dict:
-    pending = store.read_json(f"resolutions/{event_id}/pending.json")
-    if not pending:
-        raise HTTPException(status_code=404, detail="Pending resolution not found")
-    if action.action == "override" and not action.overrideReason:
-        raise HTTPException(status_code=400, detail="overrideReason required")
-
-    market_ids: list[int] = pending["marketIds"]
-    try:
-        outcomes_by_market = {int(k): str(v) for k, v in action.outcomes.items()}
+        outcomes_by_market = {int(k): str(v) for k, v in body.outcomes.items()}
     except (TypeError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Invalid outcomes keys: {e}") from e
 
-    for mid in market_ids:
+    for mid in body.marketIds:
         if mid not in outcomes_by_market:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Missing outcome for marketId {mid}",
-            )
+            raise HTTPException(status_code=400, detail=f"Missing outcome for marketId {mid}")
 
     confirmed_at = datetime.now(timezone.utc).isoformat()
-    expected_str = str(pending["expectedEarningsTimeUtc"])
 
     hash_hex = evidence_hash(
-        raw_html_hash=pending["rawHtmlHash"],
-        parsed_json_hash=pending["parsedJsonHash"],
-        extracted_values=pending["extractedValues"],
-        parser_version=pending["parserVersion"],
-        expected_utc=expected_str,
+        outcomes=body.outcomes,
         confirmed_utc=confirmed_at,
-        override_reason=action.overrideReason,
-        admin_address=action.confirmedBy,
+        admin_address=body.confirmedBy,
+        reason=body.reason,
     )
 
     on_chain: dict = {}
@@ -206,7 +133,7 @@ def confirm_resolution(event_id: int, action: AdminResolutionAction) -> dict:
         and settings.rpc_url.strip()
     ):
         try:
-            records, overall = submit_resolves(market_ids, outcomes_by_market, hash_hex)
+            records, overall = submit_resolves(body.marketIds, outcomes_by_market, hash_hex)
             on_chain = {
                 "overall": overall,
                 "txRecords": [asdict(r) for r in records],
@@ -216,16 +143,16 @@ def confirm_resolution(event_id: int, action: AdminResolutionAction) -> dict:
     else:
         on_chain = {"skipped": True, "reason": "missing RESOLVER_PRIVATE_KEY, MANAGER_ADDRESS, or RPC_URL"}
 
-    store.write_json(f"resolutions/{event_id}/admin_confirmation.json", action.model_dump(mode="json"))
+    store.write_json(f"resolutions/{event_id}/admin_confirmation.json", body.model_dump(mode="json"))
     resolution_results = {
-        "outcomes": action.outcomes,
+        "outcomes": body.outcomes,
         "evidenceHash": hash_hex,
         "confirmedAtUtc": confirmed_at,
         "onChain": on_chain,
     }
     store.write_json(f"resolutions/{event_id}/resolution_results.json", resolution_results)
     return {
-        "confirmed": True,
+        "resolved": True,
         "eventId": event_id,
         "evidenceHash": hash_hex,
         "onChain": on_chain,

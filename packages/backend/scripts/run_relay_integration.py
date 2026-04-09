@@ -24,14 +24,19 @@ from web3 import Web3
 REPO_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(REPO_ROOT / ".env")
 
+from app.contracts import get_relayer_selector_details, load_abi
+
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
 RPC_URL = (os.getenv("RPC_URL") or os.getenv("BSC_TESTNET_RPC_URL") or "").strip()
 MANAGER = os.getenv("MANAGER_ADDRESS", "").strip()
 FORWARDER = os.getenv("FORWARDER_ADDRESS", "").strip()
 USER_KEY = (os.getenv("TEST_WALLET_1_PRIVATE_KEY") or "").strip()
 
-# split(uint256,uint256) — must match packages/backend/app/relayer.py allowlist
-SPLIT_SELECTOR = bytes.fromhex("6114f3f4")
+_split_entry = next(
+    (s for s in get_relayer_selector_details() if s["name"] == "split"),
+    None,
+)
+SPLIT_SELECTOR = bytes.fromhex((_split_entry["selector"] if _split_entry else "0x00000000")[2:])
 
 
 def _normalize_pk(pk: str) -> str:
@@ -64,15 +69,7 @@ def main() -> int:
     acct = Account.from_key(_normalize_pk(USER_KEY))
     forwarder = w3.eth.contract(
         address=Web3.to_checksum_address(FORWARDER),
-        abi=[
-            {
-                "name": "nonces",
-                "type": "function",
-                "stateMutability": "view",
-                "inputs": [{"name": "owner", "type": "address"}],
-                "outputs": [{"name": "", "type": "uint256"}],
-            }
-        ],
+        abi=load_abi("AgoraForwarder"),
     )
     nonce = int(forwarder.functions.nonces(acct.address).call())
     gas = 500_000

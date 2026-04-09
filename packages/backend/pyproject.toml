@@ -1,11 +1,9 @@
 [tool.pytest.ini_options]
 # web3.py ships a pytest11 plugin ("pytest_ethereum") we don't use; it can import-break with
 # some eth-typing / web3 combos. Disable only that plugin.
-#
-# Resolution pipeline tests (pending/confirm/evidence-hash routes) are excluded by policy — see
-# tests/test_resolution_pipeline.py docstring. Remove the --ignore line below to run them again.
-addopts = ["-p", "no:pytest_ethereum", "--ignore=tests/test_resolution_pipeline.py"]
+addopts = ["-p", "no:pytest_ethereum"]
 testpaths = ["tests"]
 markers = [
-    "live_yahoo: real HTTP to finance.yahoo.com (enable with RUN_LIVE_YAHOO=1)",
+    "integration: chain integration tests requiring a running local node",
+    "slow: tests that wait on real chain time or many txs",
 ]

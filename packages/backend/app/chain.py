@@ -8,59 +8,19 @@ from web3.types import TxParams
 
 from .config import settings
 
-MANAGER_ABI: list[dict[str, Any]] = [
-    {
-        "name": "resolve",
-        "type": "function",
-        "stateMutability": "nonpayable",
-        "inputs": [
-            {"name": "marketId", "type": "uint256"},
-            {"name": "outcome", "type": "uint8"},
-            {"name": "evidenceHash", "type": "bytes32"},
-        ],
-        "outputs": [],
-    },
-]
 
-FACTORY_ABI: list[dict[str, Any]] = [
-    {
-        "name": "createEvent",
-        "type": "function",
-        "stateMutability": "nonpayable",
-        "inputs": [
-            {"name": "title", "type": "string"},
-            {"name": "category", "type": "string"},
-            {"name": "closeTime", "type": "uint256"},
-        ],
-        "outputs": [{"name": "", "type": "uint256"}],
-    },
-    {
-        "name": "createMarket",
-        "type": "function",
-        "stateMutability": "nonpayable",
-        "inputs": [
-            {"name": "eventId", "type": "uint256"},
-            {"name": "question", "type": "string"},
-            {"name": "resolutionSpecHash", "type": "bytes32"},
-            {"name": "resolutionSpecURI", "type": "string"},
-        ],
-        "outputs": [{"name": "", "type": "uint256"}],
-    },
-    {
-        "name": "nextEventId",
-        "type": "function",
-        "stateMutability": "view",
-        "inputs": [],
-        "outputs": [{"name": "", "type": "uint256"}],
-    },
-    {
-        "name": "nextMarketId",
-        "type": "function",
-        "stateMutability": "view",
-        "inputs": [],
-        "outputs": [{"name": "", "type": "uint256"}],
-    },
-]
+def _web3_for_rpc(rpc_url: str) -> Web3:
+    w3 = Web3(Web3.HTTPProvider(rpc_url))
+    low = rpc_url.lower()
+    if "127.0.0.1" not in low and "localhost" not in low:
+        from web3.middleware import ExtraDataToPOAMiddleware
+
+        w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+    return w3
+from .contracts import load_abi
+
+MANAGER_ABI: list[dict[str, Any]] = load_abi("PredictionMarketManager")
+FACTORY_ABI: list[dict[str, Any]] = load_abi("MarketFactory")
 
 
 def _normalize_pk(pk: str) -> str:
@@ -77,6 +37,11 @@ def _hex_to_bytes32(hash_hex: str) -> bytes:
     if len(h) != 64:
         raise ValueError("bytes32 hex must be 64 hex chars (optionally 0x-prefixed)")
     return bytes.fromhex(h)
+
+
+def _pending_nonce(w3: Web3, address: str) -> int:
+    # Use the pending pool so back-to-back writes do not reuse a just-broadcast nonce.
+    return int(w3.eth.get_transaction_count(address, "pending"))
 
 
 def _outcome_uint8(label: str) -> int:
@@ -100,6 +65,8 @@ def submit_resolves(
     market_ids: list[int],
     outcomes_by_market: dict[int, str],
     evidence_hash_hex: str,
+    *,
+    w3: Web3 | None = None,
 ) -> tuple[list[TxRecord], str]:
     """
     Submit resolve() for each market from resolver wallet. Returns per-tx records and overall status:
@@ -110,7 +77,8 @@ def submit_resolves(
     if not settings.resolver_private_key:
         raise RuntimeError("Missing RESOLVER_PRIVATE_KEY")
 
-    w3 = Web3(Web3.HTTPProvider(settings.rpc_url))
+    if w3 is None:
+        w3 = _web3_for_rpc(settings.rpc_url)
     acct = w3.eth.account.from_key(_normalize_pk(settings.resolver_private_key))
     manager = w3.eth.contract(
         address=Web3.to_checksum_address(settings.manager_address),
@@ -130,7 +98,7 @@ def submit_resolves(
             records.append(TxRecord(market_id=mid, tx_hash="", ok=False, error=str(e)))
             continue
         try:
-            nonce = w3.eth.get_transaction_count(acct.address)
+            nonce = _pending_nonce(w3, acct.address)
             tx: TxParams = manager.functions.resolve(mid, out, ev_bytes).build_transaction(
                 {
                     "from": acct.address,
@@ -179,6 +147,8 @@ def create_event_and_markets(
     category: str,
     close_time_unix: int,
     markets: list[tuple[str, str, str]],
+    *,
+    w3: Web3 | None = None,
 ) -> CreateMarketsResult:
     """
     markets: list of (question, resolutionSpecHash_hex, resolutionSpecURI)
@@ -188,7 +158,8 @@ def create_event_and_markets(
     if not settings.factory_owner_private_key:
         raise RuntimeError("Missing FACTORY_OWNER_PRIVATE_KEY or DEPLOYER_PRIVATE_KEY")
 
-    w3 = Web3(Web3.HTTPProvider(settings.rpc_url))
+    if w3 is None:
+        w3 = _web3_for_rpc(settings.rpc_url)
     acct = w3.eth.account.from_key(_normalize_pk(settings.factory_owner_private_key))
     factory = w3.eth.contract(
         address=Web3.to_checksum_address(settings.factory_address),
@@ -197,7 +168,7 @@ def create_event_and_markets(
 
     event_id_before = factory.functions.nextEventId().call()
 
-    nonce = w3.eth.get_transaction_count(acct.address)
+    nonce = _pending_nonce(w3, acct.address)
     tx_e: TxParams = factory.functions.createEvent(title, category, close_time_unix).build_transaction(
         {
             "from": acct.address,
@@ -214,10 +185,10 @@ def create_event_and_markets(
 
     # nextEventId is post-incremented in createEvent; value before tx is the assigned eventId.
     event_id = int(event_id_before)
+    nonce += 1
 
     market_txs: list[str] = []
     m_ids: list[int] = []
-    nonce = w3.eth.get_transaction_count(acct.address)
     for question, spec_hash_hex, uri in markets:
         market_id_before = factory.functions.nextMarketId().call()
         spec_bytes = _hex_to_bytes32(spec_hash_hex)

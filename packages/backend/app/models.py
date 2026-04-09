@@ -1,50 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
-from pydantic import BaseModel, Field, model_validator
-
-
-class Metric(str, Enum):
-    eps = "eps"
-    revenue = "revenue"
-    net_income = "netIncome"
-
-
-class Operator(str, Enum):
-    gt = ">"
-    gte = ">="
-    lt = "<"
-    lte = "<="
-    between = "between"
-
-
-class ResolutionSpec(BaseModel):
-    ticker: str
-    fiscalYear: int
-    fiscalQuarter: int
-    metric: Metric
-    operator: Operator
-    threshold: float | None = None
-    thresholdLow: float | None = None
-    thresholdHigh: float | None = None
-    expectedEarningsTimeUtc: datetime
-
-    @model_validator(mode="after")
-    def validate_operator_thresholds(self) -> ResolutionSpec:
-        if self.operator == Operator.between:
-            if self.thresholdLow is None or self.thresholdHigh is None:
-                raise ValueError("operator 'between' requires thresholdLow and thresholdHigh")
-            if self.thresholdLow > self.thresholdHigh:
-                raise ValueError("thresholdLow must be <= thresholdHigh")
-            if self.threshold is not None:
-                raise ValueError("operator 'between' must not set threshold")
-        else:
-            if self.threshold is None:
-                raise ValueError(f"operator '{self.operator.value}' requires threshold")
-            if self.thresholdLow is not None or self.thresholdHigh is not None:
-                raise ValueError("thresholdLow/thresholdHigh are only valid for operator 'between'")
-        return self
+from pydantic import BaseModel, Field
 
 
 class EventProposal(BaseModel):
@@ -54,7 +11,7 @@ class EventProposal(BaseModel):
     title: str
     category: str
     ticker: str
-    metric: Metric
+    metric: str
     fiscalYear: int
     fiscalQuarter: int
     suggestedRanges: list[str] = Field(default_factory=list)
@@ -80,25 +37,12 @@ class ProposalRejectRequest(BaseModel):
     reason: str = Field(min_length=1)
 
 
-class PendingResolution(BaseModel):
-    eventId: int
-    marketIds: list[int]
-    ticker: str
-    scrapedAtUtc: datetime
-    rawHtmlHash: str
-    parsedJsonHash: str
-    extractedValues: dict
-    proposedOutcomes: dict[int, str]
-    parserVersion: str
-    expectedEarningsTimeUtc: datetime
-
-
-class AdminResolutionAction(BaseModel):
+class AdminResolveRequest(BaseModel):
+    """Admin manually resolves markets with specified outcomes."""
     confirmedBy: str
-    confirmedAtUtc: datetime = Field(default_factory=datetime.utcnow)
-    action: str  # confirm | override
-    overrideReason: str | None = None
+    marketIds: list[int] = Field(min_length=1)
     outcomes: dict[str, str]  # JSON keys are strings; "0" -> "YES"
+    reason: str | None = None
 
 
 class RelayForwardRequest(BaseModel):

@@ -5,63 +5,11 @@ from web3 import Web3
 from web3.types import TxParams
 
 from .config import settings
+from .contracts import load_abi, get_relayer_selectors
 from .models import RelayForwardRequest
 
-FORWARDER_ABI = [
-    {
-        "inputs": [
-            {
-                "components": [
-                    {"internalType": "address", "name": "from", "type": "address"},
-                    {"internalType": "address", "name": "to", "type": "address"},
-                    {"internalType": "uint256", "name": "value", "type": "uint256"},
-                    {"internalType": "uint256", "name": "gas", "type": "uint256"},
-                    {"internalType": "uint48", "name": "deadline", "type": "uint48"},
-                    {"internalType": "bytes", "name": "data", "type": "bytes"},
-                    {"internalType": "bytes", "name": "signature", "type": "bytes"},
-                ],
-                "internalType": "struct ERC2771Forwarder.ForwardRequestData",
-                "name": "request",
-                "type": "tuple",
-            }
-        ],
-        "name": "verify",
-        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [
-            {
-                "components": [
-                    {"internalType": "address", "name": "from", "type": "address"},
-                    {"internalType": "address", "name": "to", "type": "address"},
-                    {"internalType": "uint256", "name": "value", "type": "uint256"},
-                    {"internalType": "uint256", "name": "gas", "type": "uint256"},
-                    {"internalType": "uint48", "name": "deadline", "type": "uint48"},
-                    {"internalType": "bytes", "name": "data", "type": "bytes"},
-                    {"internalType": "bytes", "name": "signature", "type": "bytes"},
-                ],
-                "internalType": "struct ERC2771Forwarder.ForwardRequestData",
-                "name": "request",
-                "type": "tuple",
-            }
-        ],
-        "name": "execute",
-        "outputs": [],
-        "stateMutability": "payable",
-        "type": "function",
-    },
-]
-
-ALLOWED_SELECTORS = {
-    "0x6114f3f4",  # split(uint256,uint256)
-    "0xf6f8d0b2",  # merge(uint256,uint256)
-    "0x24598f06",  # redeem(uint256)
-    "0x70265f74",  # postOffer(uint256,uint8,uint256,uint256)
-    "0x9a100a9b",  # fillOffer(uint256,uint256)
-    "0x52e9ca89",  # cancelOffer(uint256)
-}
+FORWARDER_ABI = load_abi("AgoraForwarder")
+ALLOWED_SELECTORS = get_relayer_selectors()
 
 
 @dataclass
@@ -87,7 +35,7 @@ def _normalize_pk(pk: str) -> str:
     return s if s.startswith("0x") else f"0x{s}"
 
 
-def relay_forward_request(request: RelayForwardRequest) -> RelayResult:
+def relay_forward_request(request: RelayForwardRequest, *, w3: Web3 | None = None) -> RelayResult:
     if not settings.rpc_url or not settings.relayer_private_key or not settings.forwarder_address:
         return RelayResult(ok=False, reason="Missing RPC_URL/RELAYER_PRIVATE_KEY/FORWARDER_ADDRESS")
     if not _is_allowed_target(request.to):
@@ -95,8 +43,14 @@ def relay_forward_request(request: RelayForwardRequest) -> RelayResult:
     if _selector(request.data) not in ALLOWED_SELECTORS:
         return RelayResult(ok=False, reason="Function selector not allowlisted")
 
-    w3 = Web3(Web3.HTTPProvider(settings.rpc_url))
-    acct = w3.eth.account.from_key(_normalize_pk(settings.relayer_private_key))
+    if w3 is None:
+        from .chain import _web3_for_rpc
+
+        w3 = _web3_for_rpc(settings.rpc_url)
+    try:
+        acct = w3.eth.account.from_key(_normalize_pk(settings.relayer_private_key))
+    except Exception:
+        return RelayResult(ok=False, reason="Invalid RELAYER_PRIVATE_KEY")
     forwarder = w3.eth.contract(address=Web3.to_checksum_address(settings.forwarder_address), abi=FORWARDER_ABI)
 
     req_tuple = (

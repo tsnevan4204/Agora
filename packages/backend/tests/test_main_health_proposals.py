@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from app.chain import CreateMarketsResult, _hex_to_bytes32
 from app.main import app, approve_proposal, create_proposal, get_proposal, health, reject_proposal
-from app.models import EventProposal, Metric, ProposalApproveRequest, ProposalMarketSpec, ProposalRejectRequest
+from app.models import EventProposal, ProposalApproveRequest, ProposalMarketSpec, ProposalRejectRequest
 
 
 def _proposal_body(**overrides: Any) -> dict[str, Any]:
@@ -136,12 +136,12 @@ def test_create_proposal_persists_and_get_round_trip(memory_store: Any) -> None:
         title="Apple Q2",
         category="earnings",
         ticker="AAPL",
-        metric=Metric.eps,
+        metric="eps",
         fiscalYear=2026,
         fiscalQuarter=2,
         suggestedRanges=[">1.5"],
     )
-    print(f"📋 Built EventProposal: id={prop.proposalId!r} title={prop.title!r} metric={prop.metric.value}")
+    print(f"📋 Built EventProposal: id={prop.proposalId!r} title={prop.title!r} metric={prop.metric}")
     saved = create_proposal(prop)
     print(f"💾 create_proposal() response: {saved!r}")
 
@@ -206,18 +206,6 @@ def test_create_proposal_rejects_missing_required_field(client: TestClient) -> N
     print("✅ Server rejected the request before it touched storage — good.")
 
 
-def test_create_proposal_rejects_invalid_metric(client: TestClient) -> None:
-    print("\n" + "=" * 60)
-    print("⚠️ TEST: Invalid metric string → 422")
-    print("=" * 60)
-    body = _proposal_body(metric="not-a-metric")
-    print(f"📨 metric field is {body['metric']!r} (not eps / revenue / netIncome)")
-    r = client.post("/proposals", json=body)
-    print(f"📥 status={r.status_code} body={r.text[:500]}")
-    assert r.status_code == 422
-    print("✅ Enum validation caught it.")
-
-
 def test_create_proposal_rejects_wrong_type_fiscal_quarter(client: TestClient) -> None:
     print("\n" + "=" * 60)
     print("⚠️ TEST: fiscalQuarter as string → 422")
@@ -247,7 +235,7 @@ def test_approve_proposal_success_updates_store_and_returns_on_chain(
             title="Mega Event",
             category="earnings",
             ticker="MSFT",
-            metric=Metric.revenue,
+            metric="revenue",
             fiscalYear=2026,
             fiscalQuarter=1,
         )
@@ -346,7 +334,7 @@ def test_approve_proposal_not_pending_after_approve_returns_400(
             title="T",
             category="c",
             ticker="X",
-            metric=Metric.eps,
+            metric="eps",
             fiscalYear=2026,
             fiscalQuarter=1,
         )
@@ -382,7 +370,7 @@ def test_approve_proposal_not_pending_after_reject_returns_400(
             title="T",
             category="c",
             ticker="X",
-            metric=Metric.eps,
+            metric="eps",
             fiscalYear=2026,
             fiscalQuarter=1,
         )
@@ -424,7 +412,7 @@ def test_approve_proposal_value_error_from_chain_returns_400_and_leaves_pending(
             title="T",
             category="c",
             ticker="X",
-            metric=Metric.eps,
+            metric="eps",
             fiscalYear=2026,
             fiscalQuarter=1,
         )
@@ -464,7 +452,7 @@ def test_approve_proposal_runtime_error_from_chain_returns_503(
             title="T",
             category="c",
             ticker="X",
-            metric=Metric.eps,
+            metric="eps",
             fiscalYear=2026,
             fiscalQuarter=1,
         )
@@ -514,7 +502,7 @@ def test_approve_with_one_invalid_spec_hash_fails_without_mutating_proposal(
             title="Good title",
             category="earnings",
             ticker="NVDA",
-            metric=Metric.eps,
+            metric="eps",
             fiscalYear=2026,
             fiscalQuarter=1,
         )
@@ -582,7 +570,7 @@ def test_reject_proposal_success(memory_store: Any) -> None:
             title="T",
             category="c",
             ticker="X",
-            metric=Metric.eps,
+            metric="eps",
             fiscalYear=2026,
             fiscalQuarter=1,
         )
@@ -623,7 +611,7 @@ def test_reject_proposal_not_pending_returns_400(memory_store: Any) -> None:
             title="T",
             category="c",
             ticker="X",
-            metric=Metric.eps,
+            metric="eps",
             fiscalYear=2026,
             fiscalQuarter=1,
         )
@@ -665,7 +653,7 @@ def test_reject_after_approve_returns_400(memory_store: Any, stub_create_markets
             title="T",
             category="c",
             ticker="X",
-            metric=Metric.eps,
+            metric="eps",
             fiscalYear=2026,
             fiscalQuarter=1,
         )
