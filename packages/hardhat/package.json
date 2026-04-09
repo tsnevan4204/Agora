@@ -13,7 +13,6 @@
     "format": "prettier --write './**/*.(ts|sol)'",
     "hardhat-verify": "hardhat verify",
     "lint": "eslint",
-    "lint-staged": "eslint",
     "integration:gas-sponsored": "cd ../.. && PYTHONPATH=packages/backend python3 packages/backend/scripts/run_relay_integration.py",
     "mint:test-wallets": "hardhat run scripts/mintMockUsdtToWallets.ts --network bscTestnet",
     "test:unit": "REPORT_GAS=true hardhat test --network hardhat",
