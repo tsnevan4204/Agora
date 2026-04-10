@@ -4,34 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ArrowRight, ChevronDown, TrendingUp, Users, Activity } from 'lucide-react'
-import { useScrollAnimation, useCountUp } from '@/hooks/use-scroll-animation'
-
-function AnimatedCounter({ 
-  end, 
-  suffix = '', 
-  prefix = '',
-  decimals = 0 
-}: { 
-  end: number
-  suffix?: string
-  prefix?: string
-  decimals?: number
-}) {
-  const { ref, isVisible } = useScrollAnimation<HTMLDivElement>({ threshold: 0.5 })
-  const { count, startAnimation } = useCountUp(end, 2000, 0, decimals)
-
-  useEffect(() => {
-    if (isVisible) {
-      startAnimation()
-    }
-  }, [isVisible, startAnimation])
-
-  return (
-    <div ref={ref} className="font-serif text-4xl md:text-5xl font-bold text-gradient">
-      {prefix}{count.toLocaleString()}{suffix}
-    </div>
-  )
-}
+import { MarketplaceStats } from '@/components/marketplace-stats'
 
 function FloatingCard({ 
   children, 
@@ -108,22 +81,11 @@ export function HeroSection() {
             </Button>
           </div>
 
-          {/* Stats */}
-          <div 
-            className={`grid grid-cols-1 md:grid-cols-3 gap-8 max-w-3xl mx-auto transition-all duration-700 delay-400 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+          {/* Stats — marketplace stalls animation */}
+          <div
+            className={`transition-all duration-700 delay-400 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
           >
-            <div className="text-center">
-              <AnimatedCounter end={847} suffix="M" prefix="$" />
-              <p className="text-sm text-muted-foreground mt-2">Total Volume</p>
-            </div>
-            <div className="text-center">
-              <AnimatedCounter end={12.4} suffix="K" decimals={1} />
-              <p className="text-sm text-muted-foreground mt-2">Active Traders</p>
-            </div>
-            <div className="text-center">
-              <AnimatedCounter end={156} />
-              <p className="text-sm text-muted-foreground mt-2">Live Markets</p>
-            </div>
+            <MarketplaceStats />
           </div>
         </div>
 
@@ -167,10 +129,10 @@ export function HeroSection() {
         </div>
       </div>
 
-      {/* Scroll indicator */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
+      {/* Scroll indicator — z-20 keeps it above all content layers */}
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-20">
         <span className="text-xs text-muted-foreground tracking-widest uppercase">Explore</span>
-        <ChevronDown className="w-5 h-5 text-muted-foreground" />
+        <ChevronDown className="w-5 h-5 text-muted-foreground animate-bounce" />
       </div>
     </section>
   )

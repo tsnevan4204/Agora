@@ -104,7 +104,7 @@ function MarketCard({ market, index }: { market: Market; index: number }) {
     >
       <Link
         href="/trade"
-        className="group relative bg-card rounded-2xl p-6 border border-border/50 hover-lift cursor-pointer transition-all duration-500 block"
+        className="group relative bg-card rounded-2xl p-8 border border-border/50 hover-lift cursor-pointer transition-all duration-300 block hover:border-primary/40 hover:shadow-xl hover:shadow-primary/10 hover:bg-primary/[0.03]"
       >
       {/* Trending badge */}
       {market.trending && (
@@ -122,7 +122,7 @@ function MarketCard({ market, index }: { market: Market; index: number }) {
       </div>
 
       {/* Title */}
-      <h3 className="font-serif text-lg font-semibold mb-4 leading-tight group-hover:text-primary transition-colors">
+      <h3 className="font-serif text-xl font-semibold mb-5 leading-tight group-hover:text-primary transition-colors duration-300">
         {market.title}
       </h3>
 
@@ -215,7 +215,7 @@ export function MarketsShowcase() {
         </div>
 
         {/* Markets Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
           {filteredMarkets.map((market, index) => (
             <MarketCard key={market.id} market={market} index={index} />
           ))}

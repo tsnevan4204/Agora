@@ -3,7 +3,7 @@ import * as fs from "fs";
 import path from "path";
 import prettier from "prettier";
 import type { HardhatRuntimeEnvironment } from "hardhat/types";
-import { agoraFrontendContractsDir } from "./paths";
+import { agoraFrontendContractsDir } from "../utils/paths";
 
 const GENERATED_COMMENT = `
 /**

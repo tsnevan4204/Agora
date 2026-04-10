@@ -1,6 +1,5 @@
 import { Navbar } from '@/components/navbar'
 import { HeroSection } from '@/components/hero-section'
-import { ImmersiveShowcase } from '@/components/immersive-showcase'
 import { MarketsShowcase } from '@/components/markets-showcase'
 import { FeaturesSection } from '@/components/features-section'
 import { HowItWorks } from '@/components/how-it-works'
@@ -14,7 +13,6 @@ export default function Home() {
     <main className="relative">
       <Navbar />
       <HeroSection />
-      <ImmersiveShowcase />
       <MarketsShowcase />
       <FeaturesSection />
       <HowItWorks />

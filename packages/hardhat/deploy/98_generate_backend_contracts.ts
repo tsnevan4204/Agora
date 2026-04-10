@@ -14,7 +14,7 @@ import { Interface } from "ethers";
 import * as fs from "fs";
 import * as path from "path";
 import type { HardhatRuntimeEnvironment } from "hardhat/types";
-import { agoraBackendContractsDir } from "./paths";
+import { agoraBackendContractsDir } from "../utils/paths";
 
 const DEPLOYMENTS_DIR = "./deployments";
 
