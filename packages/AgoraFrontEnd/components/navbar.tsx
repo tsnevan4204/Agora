@@ -8,12 +8,12 @@ import { Menu, X, Wallet } from 'lucide-react'
 import { useAccount, useEnsName, useDisconnect } from 'wagmi'
 
 const navLinks = [
-  { href: '#markets', label: 'Markets' },
+  { href: '/markets', label: 'Markets' },
   { href: '#features', label: 'Features' },
   { href: '#how-it-works', label: 'How It Works' },
   { href: '#data', label: 'Data' },
+  { href: '/analytics', label: 'Analytics' },
   { href: '/propose', label: 'Propose' },
-  { href: '/admin', label: 'Admin' },
 ]
 
 function truncateAddress(address: string) {

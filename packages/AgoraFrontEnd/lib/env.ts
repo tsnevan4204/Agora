@@ -4,7 +4,7 @@ export const backendBaseUrl =
 
 export const publicRpcUrl =
   (typeof process !== 'undefined' &&
-    (process.env.NEXT_PUBLIC_RPC_URL || process.env.NEXT_PUBLIC_BSC_TESTNET_RPC_URL)?.trim()) ||
+    (process.env.NEXT_PUBLIC_RPC_URL || process.env.NEXT_PUBLIC_BSC_RPC_URL)?.trim()) ||
   undefined
 
 /** WalletConnect Cloud project id — enables the WalletConnect connector in Wagmi. */

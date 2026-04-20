@@ -160,8 +160,8 @@ export default function SignInPage() {
 
               {/* Fine print */}
               <p className="text-xs text-muted-foreground text-center leading-relaxed">
-                By connecting you agree to use this testnet application at your own risk.
-                No real funds are at risk on BNB Smart Chain testnet.
+                By connecting you agree to use this application at your own risk.
+                Markets use demo collateral (mUSDT) — no real funds required.
               </p>
 
               {/* Already have an account? hint */}
@@ -181,7 +181,7 @@ export default function SignInPage() {
             {/* Network info */}
             <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
               <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-              Running on BNB Smart Chain testnet (chain 97)
+              Running on BNB Smart Chain (BSC Mainnet)
             </div>
           </div>
 

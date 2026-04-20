@@ -3,6 +3,7 @@ import { Playfair_Display, Inter } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { SmoothScrollProvider } from '@/components/smooth-scroll'
 import { Web3Provider } from '@/components/providers/web3-provider'
+import { GlobalNav } from '@/components/global-nav'
 import { Toaster } from 'sonner'
 import './globals.css'
 
@@ -63,6 +64,7 @@ export default function RootLayout({
           <SmoothScrollProvider>
             {children}
           </SmoothScrollProvider>
+          <GlobalNav />
         </Web3Provider>
         <Toaster richColors position="top-center" />
         {process.env.NODE_ENV === 'production' && <Analytics />}

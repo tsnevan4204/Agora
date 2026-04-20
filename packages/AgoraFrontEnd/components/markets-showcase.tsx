@@ -103,7 +103,7 @@ function MarketCard({ market, index }: { market: Market; index: number }) {
       style={{ transitionDelay: `${index * 100}ms` }}
     >
       <Link
-        href="/trade"
+        href="/markets"
         className="group relative bg-card rounded-2xl p-8 border border-border/50 hover-lift cursor-pointer transition-all duration-300 block hover:border-primary/40 hover:shadow-xl hover:shadow-primary/10 hover:bg-primary/[0.03]"
       >
       {/* Trending badge */}
@@ -224,8 +224,8 @@ export function MarketsShowcase() {
         {/* View All CTA */}
         <div className="text-center mt-12">
           <Button variant="outline" size="lg" className="group px-8" asChild>
-            <Link href="/trade">
-              Open trading console
+            <Link href="/markets">
+              Browse all markets
               <ArrowUpRight className="ml-2 w-4 h-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </Link>
           </Button>

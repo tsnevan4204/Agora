@@ -5,6 +5,7 @@ export type DiscoveredMarket = {
   question: string
   eventId: bigint
   resolutionSpecURI: string
+  closeTime: number // unix timestamp; 0 if unknown
 }
 
 type MarketDataResult = {
@@ -15,32 +16,39 @@ type MarketDataResult = {
   exists: boolean
 }
 
-/** Accepts wagmi `useReadContracts` rows for `getMarketData` (result typed as unknown). */
+/**
+ * Rows layout (interleaved):
+ *   row[2i]   = getMarketData(i)
+ *   row[2i+1] = getMarketCloseTime(i)
+ */
 export function parseMarketsFromMulticall(
   nextMarketId: bigint | undefined,
   rows: readonly { status: string; result?: unknown }[] | undefined,
 ): DiscoveredMarket[] {
-  if (nextMarketId === undefined || rows === undefined || nextMarketId === 0n) {
-    return []
-  }
+  if (nextMarketId === undefined || rows === undefined || nextMarketId === 0n) return []
   const n = Number(nextMarketId)
   const out: DiscoveredMarket[] = []
   for (let i = 0; i < n; i++) {
-    const row = rows[i]
-    if (!row || row.status !== 'success' || row.result == null || typeof row.result !== 'object') continue
-    const r = row.result as MarketDataResult
+    const dataRow = rows[i * 2]
+    const timeRow = rows[i * 2 + 1]
+    if (!dataRow || dataRow.status !== 'success' || dataRow.result == null || typeof dataRow.result !== 'object') continue
+    const r = dataRow.result as MarketDataResult
     if (!r.exists) continue
+    const closeTime = timeRow?.status === 'success' && typeof timeRow.result === 'bigint'
+      ? Number(timeRow.result)
+      : 0
     out.push({
       id: i,
       question: r.question,
       eventId: r.eventId,
       resolutionSpecURI: r.resolutionSpecURI,
+      closeTime,
     })
   }
   return out
 }
 
-/** Build multicall contract list for `getMarketData` for ids `0 .. nextMarketId-1`. */
+/** Build interleaved multicall: [getMarketData(0), getMarketCloseTime(0), getMarketData(1), ...] */
 export function factoryMarketReadContracts(
   factoryAddress: Address,
   factoryAbi: Abi,
@@ -48,14 +56,16 @@ export function factoryMarketReadContracts(
 ): Array<{
   address: Address
   abi: Abi
-  functionName: 'getMarketData'
+  functionName: string
   args: readonly [bigint]
 }> {
   if (nextMarketId === undefined || nextMarketId === 0n) return []
-  return Array.from({ length: Number(nextMarketId) }, (_, i) => ({
-    address: factoryAddress,
-    abi: factoryAbi,
-    functionName: 'getMarketData' as const,
-    args: [BigInt(i)] as const,
-  }))
+  const n = Number(nextMarketId)
+  const calls: Array<{ address: Address; abi: Abi; functionName: string; args: readonly [bigint] }> = []
+  for (let i = 0; i < n; i++) {
+    const id = BigInt(i)
+    calls.push({ address: factoryAddress, abi: factoryAbi, functionName: 'getMarketData', args: [id] })
+    calls.push({ address: factoryAddress, abi: factoryAbi, functionName: 'getMarketCloseTime', args: [id] })
+  }
+  return calls
 }

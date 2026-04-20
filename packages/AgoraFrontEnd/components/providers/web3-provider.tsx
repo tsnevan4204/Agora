@@ -6,25 +6,25 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { type ReactNode, useMemo, useState } from 'react'
 import { http } from 'viem'
 import { WagmiProvider, createConfig } from 'wagmi'
-import { bscTestnet } from 'wagmi/chains'
+import { bsc } from 'wagmi/chains'
 import { injected, walletConnect } from 'wagmi/connectors'
 import { publicRpcUrl, walletConnectProjectId } from '@/lib/env'
 
 function buildConfig() {
-  const transport = http(publicRpcUrl ?? bscTestnet.rpcUrls.default.http[0])
+  const transport = http(publicRpcUrl ?? bsc.rpcUrls.default.http[0])
   if (walletConnectProjectId) {
     return getDefaultConfig({
       appName: 'Agora',
       projectId: walletConnectProjectId,
-      chains: [bscTestnet],
+      chains: [bsc],
       ssr: true,
-      transports: { [bscTestnet.id]: transport },
+      transports: { [bsc.id]: transport },
     })
   }
   return createConfig({
-    chains: [bscTestnet],
+    chains: [bsc],
     connectors: [injected({ shimDisconnect: true })],
-    transports: { [bscTestnet.id]: transport },
+    transports: { [bsc.id]: transport },
     ssr: true,
   })
 }

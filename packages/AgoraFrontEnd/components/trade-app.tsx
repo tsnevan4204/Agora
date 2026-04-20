@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, use } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { LayoutGrid } from 'lucide-react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import {
   Activity,
@@ -32,7 +33,7 @@ import {
   useReadContracts,
   useWaitForTransactionReceipt,
 } from 'wagmi'
-import { bscTestnet } from 'wagmi/chains'
+import { bsc } from 'wagmi/chains'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -48,6 +49,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { factoryMarketReadContracts, parseMarketsFromMulticall } from '@/lib/markets-from-chain'
+import { CURATED_ID_SET } from '@/lib/curated-markets'
 import { exchangeOfferReadContracts, parseOfferReadResults } from '@/lib/offers-from-chain'
 import { explorerAddressUrl, explorerTxUrl } from '@/lib/explorer'
 import {
@@ -80,6 +82,10 @@ const erc20Abi = parseAbi([
   'function balanceOf(address account) view returns (uint256)',
 ])
 
+const mockUsdtAbi = parseAbi([
+  'function mint(address to, uint256 amount) external',
+])
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function bpsToPercent(bps: bigint | number) {
@@ -103,10 +109,13 @@ function StatusDot({ ok }: { ok: boolean }) {
 
 // ─── main component ────────────────────────────────────────────────────────────
 
-export function TradeApp() {
+export function TradeApp({ searchParams }: { searchParams?: Promise<{ marketId?: string }> }) {
   const { address, isConnected, status: connStatus } = useAccount()
   const router = useRouter()
   const chainId = useChainId()
+  const urlSearchParams = useSearchParams()
+  const resolvedParams = searchParams ? use(searchParams) : null
+  const urlMarketId = resolvedParams?.marketId ?? urlSearchParams?.get('marketId') ?? null
   const { connect, connectors, isPending: isConnectPending } = useConnect()
   const { disconnect } = useDisconnect()
   const { switchChainAsync } = useSwitchChain()
@@ -140,7 +149,10 @@ export function TradeApp() {
   const [fillOfferId, setFillOfferId] = useState('')
   const [fillAmt, setFillAmt] = useState('')
   const [cancelId, setCancelId] = useState('')
-  const [marketId, setMarketId] = useState(0)
+  const [marketId, setMarketId] = useState(() => {
+    const parsed = urlMarketId !== null ? parseInt(urlMarketId, 10) : NaN
+    return isNaN(parsed) ? 0 : parsed
+  })
 
   // ── UI state ──
   const [tradeTab, setTradeTab] = useState<'buy' | 'sell'>('buy')
@@ -163,7 +175,7 @@ export function TradeApp() {
   // ── contracts ──
   const contracts = useMemo(() => {
     try {
-      if (chainId !== bscTestnet.id) return null
+      if (chainId !== bsc.id) return null
       return {
         forwarder: mustGetContract(chainId, 'AgoraForwarder'),
         manager: mustGetContract(chainId, 'PredictionMarketManager'),
@@ -211,15 +223,16 @@ export function TradeApp() {
       parseMarketsFromMulticall(
         typeof nextMarketId === 'bigint' ? nextMarketId : undefined,
         marketRows,
-      ),
+      ).filter((m) => CURATED_ID_SET.has(m.id)),
     [nextMarketId, marketRows],
   )
 
   useEffect(() => {
     if (discoveredMarkets.length === 0) return
     const ids = new Set(discoveredMarkets.map((m) => m.id))
+    // If URL specified a valid marketId, keep it; otherwise fall back to first market
     if (!ids.has(marketId)) setMarketId(discoveredMarkets[0].id)
-  }, [discoveredMarkets, marketId])
+  }, [discoveredMarkets]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const marketIdBn = BigInt(marketId)
 
@@ -369,7 +382,7 @@ export function TradeApp() {
 
   // ── actions ──
   const ensureBsc = async () => {
-    if (chainId !== bscTestnet.id) await switchChainAsync?.({ chainId: bscTestnet.id })
+    if (chainId !== bsc.id) await switchChainAsync?.({ chainId: bsc.id })
   }
 
   const approveUsdt = async (spender: `0x${string}`) => {
@@ -393,7 +406,7 @@ export function TradeApp() {
     const res = await relayForward({
       walletClient,
       publicClient,
-      chainId: bscTestnet.id,
+      chainId: bsc.id,
       userAddress: address,
       forwarder: contracts.forwarder.address,
       forwarderAbi: contracts.forwarder.abi,
@@ -447,6 +460,19 @@ export function TradeApp() {
     await runRelay(`Cancel #${cancelId}`, contracts.exchange.address, data)
   }
 
+  const onMintUsdt = async () => {
+    if (!contracts || !address) return
+    await ensureBsc()
+    // Mint 1,000 demo USDT (6 decimals)
+    await writeContractAsync({
+      address: contracts.usdt.address,
+      abi: mockUsdtAbi,
+      functionName: 'mint',
+      args: [address, 1_000_000_000n],
+    })
+    toast.success('1,000 demo USDT minted to your wallet')
+  }
+
   const onMirrorOrderbook = async () => {
     if (!address) { toast.error('Connect wallet'); return }
     const sideNames = ['BUY_YES', 'BUY_NO', 'SELL_YES', 'SELL_NO']
@@ -464,14 +490,23 @@ export function TradeApp() {
     else { toast.success('Order mirrored to off-chain book'); void refreshApi() }
   }
 
-  const wrongChain = isConnected && chainId !== bscTestnet.id
+  const wrongChain = isConnected && chainId !== bsc.id
   const apiOk = health.startsWith('ok')
   const isRelayBusy = isWritePending || isConfirming
 
-  const approveTxUrl = txHash ? explorerTxUrl(bscTestnet.id, txHash) : null
-  const relayTxUrl = lastRelayTx ? explorerTxUrl(bscTestnet.id, lastRelayTx) : null
+  const approveTxUrl = txHash ? explorerTxUrl(bsc.id, txHash) : null
+  const relayTxUrl = lastRelayTx ? explorerTxUrl(bsc.id, lastRelayTx) : null
 
   const activeMarket = discoveredMarkets.find((x) => x.id === marketId)
+
+  const needsManagerApproval = typeof allowanceMgr === 'bigint' && allowanceMgr === 0n
+  const needsExchangeApproval = typeof allowanceEx === 'bigint' && allowanceEx === 0n
+  const needsAnyApproval = needsManagerApproval || needsExchangeApproval
+
+  function formatResolveDate(ts: number): string {
+    if (!ts) return ''
+    return new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Render
@@ -509,9 +544,16 @@ export function TradeApp() {
         {/* Market name */}
         <div className="flex-1 min-w-0">
           {activeMarket ? (
-            <p className="text-sm font-medium truncate" title={activeMarket.question}>
-              Market #{activeMarket.id} · {activeMarket.question.length > 60 ? activeMarket.question.slice(0, 60) + '…' : activeMarket.question}
-            </p>
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate" title={activeMarket.question}>
+                {activeMarket.question.length > 60 ? activeMarket.question.slice(0, 60) + '…' : activeMarket.question}
+              </p>
+              {activeMarket.closeTime > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Resolves {formatResolveDate(activeMarket.closeTime)} · #{activeMarket.id}
+                </p>
+              )}
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">No market loaded</p>
           )}
@@ -525,12 +567,18 @@ export function TradeApp() {
           </span>
           <span className="flex items-center gap-1.5">
             <StatusDot ok={isConnected && !wrongChain} />
-            {isConnected && !wrongChain ? 'BNB testnet' : 'Not connected'}
+            {isConnected && !wrongChain ? 'BNB Chain' : 'Not connected'}
           </span>
         </div>
 
         {/* Nav */}
         <div className="flex items-center gap-2 shrink-0">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/markets" className="flex items-center gap-1.5">
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Markets</span>
+            </Link>
+          </Button>
           <Button variant="ghost" size="sm" asChild>
             <Link href="/admin">Admin</Link>
           </Button>
@@ -557,18 +605,18 @@ export function TradeApp() {
             <Alert>
               <AlertTitle>Wrong network</AlertTitle>
               <AlertDescription className="flex items-center gap-3 flex-wrap">
-                <span>Switch to BNB Smart Chain testnet (chain {bscTestnet.id}).</span>
-                <Button size="sm" onClick={() => switchChainAsync?.({ chainId: bscTestnet.id })}>
+                <span>Switch to BNB Smart Chain (chain {bsc.id}).</span>
+                <Button size="sm" onClick={() => switchChainAsync?.({ chainId: bsc.id })}>
                   Switch network
                 </Button>
               </AlertDescription>
             </Alert>
           )}
-          {!contracts && chainId === bscTestnet.id && (
+          {!contracts && chainId === bsc.id && (
             <Alert variant="destructive">
               <AlertTitle>Contracts not found</AlertTitle>
               <AlertDescription>
-                No ABI bundle for chain 97. Re-run{' '}
+                No ABI bundle for chain 56. Re-run{' '}
                 <code className="text-xs bg-background/40 px-1 rounded">hardhat deploy --tags sync-frontend</code>.
               </AlertDescription>
             </Alert>
@@ -581,6 +629,68 @@ export function TradeApp() {
 
         {/* ══ LEFT PANEL ══ */}
         <aside className="border-r border-border overflow-y-auto p-5 space-y-4">
+
+          {/* ─ One-time wallet setup banner ─ */}
+          {isConnected && !wrongChain && contracts && needsAnyApproval && (
+            <section className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <span className="text-lg">🔑</span>
+                <div>
+                  <p className="text-sm font-semibold text-primary">One-time setup required</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    Before you can trade, you need to give the contracts permission to use your USDT.
+                    This is a standard ERC-20 approval — you only do this once.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2 text-xs text-muted-foreground">
+                {needsManagerApproval && (
+                  <div className="flex items-center gap-2 rounded-lg bg-background/60 p-2.5">
+                    <span className="text-destructive font-bold">①</span>
+                    <span className="flex-1"><strong>Approve Market Manager</strong> — needed to split USDT into YES/NO shares when you enter a position.</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 h-7 text-xs px-2.5 border-primary/40 text-primary hover:bg-primary/10"
+                      disabled={isRelayBusy}
+                      onClick={() => contracts && void approveUsdt(contracts.manager.address)}
+                    >
+                      Approve
+                    </Button>
+                  </div>
+                )}
+                {needsExchangeApproval && (
+                  <div className="flex items-center gap-2 rounded-lg bg-background/60 p-2.5">
+                    <span className="text-destructive font-bold">②</span>
+                    <span className="flex-1"><strong>Approve Exchange</strong> — needed to fill other traders' offers (buy shares from the order book).</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 h-7 text-xs px-2.5 border-primary/40 text-primary hover:bg-primary/10"
+                      disabled={isRelayBusy}
+                      onClick={() => contracts && void approveUsdt(contracts.exchange.address)}
+                    >
+                      Approve
+                    </Button>
+                  </div>
+                )}
+              </div>
+              {(isWritePending || isConfirming) && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Confirming on-chain…
+                </p>
+              )}
+            </section>
+          )}
+
+          {/* ─ All approved confirmation ─ */}
+          {isConnected && !wrongChain && contracts && !needsAnyApproval && typeof allowanceMgr === 'bigint' && (
+            <div className="flex items-center gap-2 rounded-xl bg-success/10 border border-success/20 px-3 py-2 text-xs text-success">
+              <span>✓</span>
+              <span>Wallet ready — both approvals active</span>
+            </div>
+          )}
 
           {/* Market selector */}
           {contracts ? (
@@ -600,7 +710,7 @@ export function TradeApp() {
               {/* RPC error */}
               {!marketsPending && nextMarketIdError && (
                 <p className="text-xs text-destructive">
-                  Could not reach BSC testnet RPC. Check your network connection.
+                  Could not reach BSC RPC. Check your network connection.
                 </p>
               )}
 
@@ -633,11 +743,11 @@ export function TradeApp() {
               )}
             </section>
           ) : (
-            /* Not on BSC testnet */
+            /* Not on BSC mainnet */
             <section className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 space-y-1">
               <p className="text-xs font-medium text-destructive">Wrong network</p>
               <p className="text-xs text-muted-foreground">
-                Switch your wallet to <span className="font-medium">BNB Smart Chain Testnet</span> (chain 97) to trade.
+                Switch your wallet to <span className="font-medium">BNB Smart Chain</span> (chain 56) to trade.
               </p>
             </section>
           )}
@@ -878,78 +988,15 @@ export function TradeApp() {
               </>
             )}
 
-            {isConnected && (
-              <>
-                <Separator />
-                {/* Approvals */}
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                    USDT Allowances
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
-                      <span className="text-muted-foreground">Manager</span>
-                      {typeof allowanceMgr === 'bigint' && allowanceMgr > 0n ? (
-                        <span className="text-success font-medium">✓</span>
-                      ) : (
-                        <span className="text-destructive font-medium">✗</span>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
-                      <span className="text-muted-foreground">Exchange</span>
-                      {typeof allowanceEx === 'bigint' && allowanceEx > 0n ? (
-                        <span className="text-success font-medium">✓</span>
-                      ) : (
-                        <span className="text-destructive font-medium">✗</span>
-                      )}
-                    </div>
-                  </div>
-                  {(!(typeof allowanceMgr === 'bigint' && allowanceMgr > 0n) ||
-                    !(typeof allowanceEx === 'bigint' && allowanceEx > 0n)) && (
-                    <div className="grid grid-cols-2 gap-2">
-                      {!(typeof allowanceMgr === 'bigint' && allowanceMgr > 0n) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs"
-                          disabled={!contracts || !isConnected || isRelayBusy}
-                          onClick={() => contracts && void approveUsdt(contracts.manager.address)}
-                        >
-                          Approve Manager
-                        </Button>
-                      )}
-                      {!(typeof allowanceEx === 'bigint' && allowanceEx > 0n) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs"
-                          disabled={!contracts || !isConnected || isRelayBusy}
-                          onClick={() => contracts && void approveUsdt(contracts.exchange.address)}
-                        >
-                          Approve Exchange
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {(isWritePending || isConfirming) && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Waiting for confirmation…
-                  </p>
-                )}
-                {approveTxUrl && (
-                  <a
-                    href={approveTxUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-primary hover:underline"
-                  >
-                    View approval tx →
-                  </a>
-                )}
-              </>
+            {isConnected && approveTxUrl && (
+              <a
+                href={approveTxUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary hover:underline block mt-1"
+              >
+                View approval tx →
+              </a>
             )}
           </section>
 
@@ -1022,7 +1069,7 @@ export function TradeApp() {
                           <td className="px-4 py-2 font-mono text-right">{fmtShares(o.remainingAmount)}</td>
                           <td className="px-4 py-2 font-mono text-right">
                             <a
-                              href={explorerAddressUrl(bscTestnet.id, o.maker) ?? '#'}
+                              href={explorerAddressUrl(bsc.id, o.maker) ?? '#'}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-primary hover:underline"
@@ -1093,7 +1140,7 @@ export function TradeApp() {
                           <td className="px-4 py-2 font-mono text-right">{fmtShares(o.remainingAmount)}</td>
                           <td className="px-4 py-2 font-mono text-right">
                             <a
-                              href={explorerAddressUrl(bscTestnet.id, o.maker) ?? '#'}
+                              href={explorerAddressUrl(bsc.id, o.maker) ?? '#'}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-primary hover:underline"
@@ -1165,6 +1212,18 @@ export function TradeApp() {
                       </div>
                     ))}
                   </div>
+                )}
+
+                {isConnected && contracts && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full text-xs"
+                    onClick={onMintUsdt}
+                    disabled={isRelayBusy}
+                  >
+                    Get 1,000 Demo USDT (free)
+                  </Button>
                 )}
 
                 {isConnected && address && (

@@ -71,7 +71,7 @@ export function HeroSection() {
               className="group px-8 py-6 text-base bg-primary hover:bg-primary/90 transition-all duration-300 hover:shadow-xl hover:shadow-primary/20"
               asChild
             >
-              <Link href="/trade">
+              <Link href="/markets">
                 Start Trading
                 <ArrowRight className="ml-2 w-5 h-5 transition-transform group-hover:translate-x-1" />
               </Link>
